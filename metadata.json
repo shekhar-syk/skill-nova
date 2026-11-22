@@ -1,0 +1,6 @@
+{
+  "name": "SKILLNOVA",
+  "description": "Online learning and professional technology development platform with 45+ courses, admissions, Razorpay payments, LMS, and role-based dashboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

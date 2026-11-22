@@ -1,0 +1,292 @@
+-- SKILLNOVA Production Upgrade PostgreSQL Migration (Additive & Non-Destructive)
+
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS randomize_questions BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS allow_negative_marking BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS negative_marks_per_wrong REAL NOT NULL DEFAULT 0.25;
+
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS question_type TEXT NOT NULL DEFAULT 'MCQ';
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS correct_answers TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS difficulty TEXT NOT NULL DEFAULT 'Medium';
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS skill_tag TEXT NOT NULL DEFAULT 'Core Engineering';
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS marks REAL NOT NULL DEFAULT 1;
+
+ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS raw_score REAL NOT NULL DEFAULT 0;
+ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS negative_deducted REAL NOT NULL DEFAULT 0;
+ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS skill_breakdown TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS time_taken_seconds INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS question_bank (
+  id SERIAL PRIMARY KEY,
+  course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  question_text TEXT NOT NULL,
+  question_type TEXT NOT NULL DEFAULT 'MCQ' CHECK (question_type IN ('MCQ', 'MULTI_SELECT', 'TRUE_FALSE', 'SHORT_ANSWER')),
+  options TEXT NOT NULL DEFAULT '[]',
+  correct_option_index INTEGER NOT NULL DEFAULT 0,
+  correct_answers TEXT NOT NULL DEFAULT '[]',
+  difficulty TEXT NOT NULL DEFAULT 'Medium' CHECK (difficulty IN ('Easy', 'Medium', 'Hard')),
+  skill_tag TEXT NOT NULL DEFAULT 'Core Engineering',
+  marks REAL NOT NULL DEFAULT 1,
+  explanation TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_notifications (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'ANNOUNCEMENT',
+  action_url TEXT,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS notification_preferences (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  announcements BOOLEAN NOT NULL DEFAULT TRUE,
+  live_reminders BOOLEAN NOT NULL DEFAULT TRUE,
+  assignment_deadlines BOOLEAN NOT NULL DEFAULT TRUE,
+  quiz_results BOOLEAN NOT NULL DEFAULT TRUE,
+  mentor_feedback BOOLEAN NOT NULL DEFAULT TRUE,
+  payment_updates BOOLEAN NOT NULL DEFAULT TRUE,
+  placement_updates BOOLEAN NOT NULL DEFAULT TRUE,
+  email_digest BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_conversations (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'CONCEPT',
+  language TEXT NOT NULL DEFAULT 'General',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_messages (
+  id SERIAL PRIMARY KEY,
+  conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'CONCEPT',
+  tokens_used INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS student_points (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL CHECK (event_type IN ('LESSON', 'MODULE', 'QUIZ_PASS', 'COURSE_COMPLETE', 'STREAK_BONUS', 'ROADMAP_STEP', 'COMMUNITY_HELP')),
+  event_key TEXT NOT NULL,
+  points INTEGER NOT NULL,
+  description TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, event_key)
+);
+
+CREATE TABLE IF NOT EXISTS achievements (
+  id SERIAL PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  icon_name TEXT NOT NULL DEFAULT 'Award',
+  xp_reward INTEGER NOT NULL DEFAULT 25,
+  criteria_type TEXT NOT NULL,
+  criteria_value INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS student_achievements (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  achievement_id INTEGER NOT NULL REFERENCES achievements(id) ON DELETE CASCADE,
+  unlocked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, achievement_id)
+);
+
+CREATE TABLE IF NOT EXISTS learning_streaks (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  current_streak INTEGER NOT NULL DEFAULT 0,
+  longest_streak INTEGER NOT NULL DEFAULT 0,
+  last_activity_date TEXT,
+  weekly_goal_minutes INTEGER NOT NULL DEFAULT 180,
+  weekly_minutes_done INTEGER NOT NULL DEFAULT 0,
+  week_start_date TEXT,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS career_roadmaps (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  role_summary TEXT NOT NULL,
+  description TEXT NOT NULL,
+  difficulty TEXT NOT NULL DEFAULT 'Intermediate',
+  estimated_weeks INTEGER NOT NULL DEFAULT 16,
+  skill_categories TEXT NOT NULL DEFAULT '[]',
+  practical_projects TEXT NOT NULL DEFAULT '[]',
+  interview_prep TEXT NOT NULL DEFAULT '[]',
+  assessment_questions TEXT NOT NULL DEFAULT '[]',
+  is_published BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS roadmap_steps (
+  id SERIAL PRIMARY KEY,
+  roadmap_id INTEGER NOT NULL REFERENCES career_roadmaps(id) ON DELETE CASCADE,
+  step_order INTEGER NOT NULL DEFAULT 1,
+  skill_category TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  recommended_course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
+  estimated_hours INTEGER NOT NULL DEFAULT 12,
+  project_task TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS student_roadmaps (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  roadmap_id INTEGER NOT NULL REFERENCES career_roadmaps(id) ON DELETE CASCADE,
+  completed_step_ids TEXT NOT NULL DEFAULT '[]',
+  progress_percent INTEGER NOT NULL DEFAULT 0,
+  skill_assessment_score INTEGER,
+  skill_assessment_result TEXT,
+  is_primary BOOLEAN NOT NULL DEFAULT TRUE,
+  selected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, roadmap_id)
+);
+
+CREATE TABLE IF NOT EXISTS live_sessions (
+  id SERIAL PRIMARY KEY,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  instructor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  meeting_url TEXT NOT NULL,
+  meeting_platform TEXT NOT NULL DEFAULT 'Google Meet',
+  scheduled_at TEXT NOT NULL,
+  duration_minutes INTEGER NOT NULL DEFAULT 60,
+  status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED', 'LIVE', 'COMPLETED', 'CANCELLED')),
+  cancel_reason TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS attendance (
+  id SERIAL PRIMARY KEY,
+  session_id INTEGER NOT NULL REFERENCES live_sessions(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'PRESENT' CHECK (status IN ('PRESENT', 'LATE', 'ABSENT')),
+  joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  notes TEXT,
+  UNIQUE (session_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS companies (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  industry TEXT NOT NULL,
+  location TEXT NOT NULL,
+  website_url TEXT,
+  description TEXT NOT NULL,
+  logo_url TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS job_opportunities (
+  id SERIAL PRIMARY KEY,
+  company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  opportunity_type TEXT NOT NULL DEFAULT 'JOB' CHECK (opportunity_type IN ('JOB', 'INTERNSHIP')),
+  location TEXT NOT NULL,
+  work_mode TEXT NOT NULL DEFAULT 'Hybrid',
+  stipend_or_ctc TEXT NOT NULL,
+  eligibility TEXT NOT NULL,
+  required_skills TEXT NOT NULL DEFAULT '[]',
+  description TEXT NOT NULL,
+  application_deadline TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED')),
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS job_applications (
+  id SERIAL PRIMARY KEY,
+  opportunity_id INTEGER NOT NULL REFERENCES job_opportunities(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  resume_url TEXT NOT NULL,
+  resume_filename TEXT,
+  cover_note TEXT,
+  portfolio_url TEXT,
+  status TEXT NOT NULL DEFAULT 'APPLIED' CHECK (status IN ('APPLIED', 'UNDER_REVIEW', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'SELECTED', 'REJECTED')),
+  admin_remarks TEXT,
+  recommended_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  recommendation_note TEXT,
+  applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (opportunity_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS student_recommendations (
+  id SERIAL PRIMARY KEY,
+  student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  instructor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  opportunity_id INTEGER REFERENCES job_opportunities(id) ON DELETE SET NULL,
+  course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
+  endorsement_note TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS discussions (
+  id SERIAL PRIMARY KEY,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  tags TEXT NOT NULL DEFAULT '[]',
+  is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+  is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+  is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
+  is_reported BOOLEAN NOT NULL DEFAULT FALSE,
+  report_reason TEXT,
+  likes_count INTEGER NOT NULL DEFAULT 0,
+  replies_count INTEGER NOT NULL DEFAULT 0,
+  accepted_reply_id INTEGER,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS discussion_replies (
+  id SERIAL PRIMARY KEY,
+  discussion_id INTEGER NOT NULL REFERENCES discussions(id) ON DELETE CASCADE,
+  parent_reply_id INTEGER REFERENCES discussion_replies(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  is_accepted BOOLEAN NOT NULL DEFAULT FALSE,
+  is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
+  is_reported BOOLEAN NOT NULL DEFAULT FALSE,
+  report_reason TEXT,
+  likes_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS discussion_likes (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_type TEXT NOT NULL CHECK (target_type IN ('DISCUSSION', 'REPLY')),
+  target_id INTEGER NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, target_type, target_id)
+);

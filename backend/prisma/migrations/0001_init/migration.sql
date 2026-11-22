@@ -1,0 +1,335 @@
+-- SKILLNOVA Baseline PostgreSQL Schema (reconciled with backend/prisma/schema.prisma)
+
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'STUDENT' CHECK (role IN ('SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'STUDENT')),
+  phone TEXT,
+  avatar_url TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  reset_token TEXT,
+  reset_token_expires TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS student_profiles (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  whatsapp_number TEXT,
+  college_name TEXT,
+  department TEXT,
+  year_of_study TEXT,
+  state TEXT,
+  education_level TEXT,
+  bio TEXT,
+  github_url TEXT,
+  linkedin_url TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS instructor_profiles (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  headline TEXT NOT NULL,
+  expertise TEXT NOT NULL DEFAULT '[]',
+  years_experience INTEGER NOT NULL DEFAULT 5,
+  company_background TEXT,
+  bio TEXT,
+  linkedin_url TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS course_categories (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  slug TEXT NOT NULL UNIQUE,
+  description TEXT NOT NULL,
+  icon_name TEXT NOT NULL DEFAULT 'Code2',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS courses (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  short_summary TEXT NOT NULL,
+  description TEXT NOT NULL,
+  category_id INTEGER NOT NULL REFERENCES course_categories(id) ON DELETE RESTRICT,
+  instructor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  thumbnail_url TEXT NOT NULL,
+  technologies TEXT NOT NULL DEFAULT '[]',
+  skill_level TEXT NOT NULL DEFAULT 'Intermediate' CHECK (skill_level IN ('Beginner', 'Intermediate', 'Advanced')),
+  duration TEXT NOT NULL,
+  duration_weeks INTEGER NOT NULL DEFAULT 12,
+  course_fee INTEGER NOT NULL,
+  advance_amount INTEGER NOT NULL,
+  full_amount INTEGER NOT NULL,
+  learning_outcomes TEXT NOT NULL DEFAULT '[]',
+  internship_available BOOLEAN NOT NULL DEFAULT TRUE,
+  internship_details TEXT,
+  faqs TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'PUBLISHED' CHECK (status IN ('DRAFT', 'PUBLISHED', 'ARCHIVED')),
+  featured BOOLEAN NOT NULL DEFAULT FALSE,
+  rating_avg REAL NOT NULL DEFAULT 4.8,
+  enrolled_count INTEGER NOT NULL DEFAULT 0,
+  live_session_info TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS course_modules (
+  id SERIAL PRIMARY KEY,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  module_order INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS lessons (
+  id SERIAL PRIMARY KEY,
+  module_id INTEGER NOT NULL REFERENCES course_modules(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  lesson_type TEXT NOT NULL DEFAULT 'VIDEO' CHECK (lesson_type IN ('VIDEO', 'READING', 'LAB', 'LIVE')),
+  video_url TEXT,
+  content TEXT NOT NULL,
+  resource_url TEXT,
+  duration_minutes INTEGER NOT NULL DEFAULT 30,
+  lesson_order INTEGER NOT NULL DEFAULT 1,
+  is_free_preview BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS admissions (
+  id SERIAL PRIMARY KEY,
+  registration_id TEXT NOT NULL UNIQUE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
+  full_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  mobile_number TEXT NOT NULL,
+  whatsapp_number TEXT NOT NULL,
+  college_name TEXT NOT NULL,
+  department TEXT NOT NULL,
+  year_of_study TEXT NOT NULL,
+  state TEXT NOT NULL,
+  learning_preference TEXT NOT NULL DEFAULT 'Live Online Cohort',
+  message TEXT,
+  payment_option TEXT NOT NULL DEFAULT 'ADVANCE' CHECK (payment_option IN ('ADVANCE', 'FULL')),
+  total_fee INTEGER NOT NULL,
+  amount_paid INTEGER NOT NULL DEFAULT 0,
+  remaining_balance INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PAYMENT_PENDING' CHECK (status IN ('PENDING', 'PAYMENT_PENDING', 'ADVANCE_PAID', 'FULLY_PAID', 'APPROVED', 'REJECTED')),
+  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  admin_notes TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id SERIAL PRIMARY KEY,
+  admission_id INTEGER NOT NULL REFERENCES admissions(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
+  receipt_number TEXT NOT NULL UNIQUE,
+  payment_type TEXT NOT NULL CHECK (payment_type IN ('ADVANCE', 'FULL', 'BALANCE')),
+  amount INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  razorpay_order_id TEXT NOT NULL UNIQUE,
+  razorpay_payment_id TEXT UNIQUE,
+  razorpay_signature TEXT,
+  status TEXT NOT NULL DEFAULT 'CREATED' CHECK (status IN ('CREATED', 'SUCCESS', 'FAILED', 'REFUNDED')),
+  failure_reason TEXT,
+  gateway_mode TEXT NOT NULL DEFAULT 'RAZORPAY',
+  paid_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS enrollments (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  admission_id INTEGER REFERENCES admissions(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'COMPLETED', 'SUSPENDED')),
+  progress_percent INTEGER NOT NULL DEFAULT 0,
+  learning_hours REAL NOT NULL DEFAULT 0,
+  enrolled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMP,
+  UNIQUE (user_id, course_id)
+);
+
+CREATE TABLE IF NOT EXISTS lesson_progress (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  lesson_id INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+  is_completed BOOLEAN NOT NULL DEFAULT TRUE,
+  completed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, lesson_id)
+);
+
+CREATE TABLE IF NOT EXISTS quizzes (
+  id SERIAL PRIMARY KEY,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  passing_score INTEGER NOT NULL DEFAULT 60,
+  time_limit_minutes INTEGER NOT NULL DEFAULT 15,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS questions (
+  id SERIAL PRIMARY KEY,
+  quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+  question_text TEXT NOT NULL,
+  options TEXT NOT NULL DEFAULT '[]',
+  correct_option_index INTEGER NOT NULL DEFAULT 0,
+  explanation TEXT,
+  question_order INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS quiz_attempts (
+  id SERIAL PRIMARY KEY,
+  quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  answers TEXT NOT NULL,
+  score INTEGER NOT NULL,
+  total_questions INTEGER NOT NULL,
+  percentage INTEGER NOT NULL,
+  passed BOOLEAN NOT NULL DEFAULT FALSE,
+  attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS assignments (
+  id SERIAL PRIMARY KEY,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  due_date TEXT NOT NULL,
+  max_score INTEGER NOT NULL DEFAULT 100,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS assignment_submissions (
+  id SERIAL PRIMARY KEY,
+  assignment_id INTEGER NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  submission_url TEXT,
+  submission_notes TEXT,
+  file_name TEXT,
+  status TEXT NOT NULL DEFAULT 'SUBMITTED' CHECK (status IN ('SUBMITTED', 'REVIEWED', 'NEEDS_REVISION')),
+  score INTEGER,
+  instructor_feedback TEXT,
+  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at TIMESTAMP,
+  UNIQUE (assignment_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS certificates (
+  id SERIAL PRIMARY KEY,
+  certificate_code TEXT NOT NULL UNIQUE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  student_name TEXT NOT NULL,
+  course_title TEXT NOT NULL,
+  grade TEXT NOT NULL DEFAULT 'Distinction',
+  issued_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, course_id)
+);
+
+CREATE TABLE IF NOT EXISTS enquiries (
+  id SERIAL PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  mobile_number TEXT NOT NULL,
+  course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
+  course_interest TEXT NOT NULL,
+  learning_preference TEXT NOT NULL DEFAULT 'Live Online',
+  message TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'NEW' CHECK (status IN ('NEW', 'CONTACTED', 'FOLLOW_UP', 'CONVERTED', 'CLOSED')),
+  assigned_counsellor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  follow_up_date TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS enquiry_notes (
+  id SERIAL PRIMARY KEY,
+  enquiry_id INTEGER NOT NULL REFERENCES enquiries(id) ON DELETE CASCADE,
+  author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  note TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS testimonials (
+  id SERIAL PRIMARY KEY,
+  student_name TEXT NOT NULL,
+  role_title TEXT NOT NULL,
+  company_name TEXT NOT NULL,
+  course_title TEXT NOT NULL,
+  quote TEXT NOT NULL,
+  outcome_metric TEXT NOT NULL,
+  is_published BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS faqs (
+  id SERIAL PRIMARY KEY,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'General',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_published BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'INFO',
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  revoked BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id SERIAL PRIMARY KEY,
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT,
+  details TEXT,
+  ip_address TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS site_settings (
+  setting_key TEXT PRIMARY KEY,
+  setting_value TEXT NOT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
